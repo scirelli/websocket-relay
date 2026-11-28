@@ -371,10 +371,153 @@ Methods (via their target):
 ```
 
 Notifications get no response, per spec. Batch requests are
-supported. The bridge forwards `chat/+`, `scripts/+` and `shim/rpc/remote/+`
-from localhostServer's broker to the Remote Server's, and
-`chat/+` and `shim/clients/+/rpc` back; it never re-forwards
-messages the broker injected itself, which keeps it loop-free.
+supported. The bridge forwards `chat/<user>`, `scripts/<user>`,
+`assistant/<user>/…` and `shim/rpc/remote/<clientId>` from
+localhostServer's broker to the Remote Server's, and `chat/+`,
+`scripts/+`, `assistant/#` and `shim/clients/+/rpc` back; it
+never re-forwards messages the broker injected itself, which
+keeps it loop-free.
+
+## Talking to pages from your own program
+
+Everything a page can receive arrives as an MQTT message on
+one of the topics under Protocol, and everything it sends
+leaves the same way. A program that wants to talk to pages —
+an operator console, a test harness, a server of your own —
+only needs an MQTT client connected to a broker the pages
+use. It does not need to be written in Go or use this repo's
+packages.
+
+### Joining a broker
+
+Connect as an ordinary MQTT client (QoS 0 throughout):
+
+- **TCP** (`tcp://<host>:1883`) for native programs, or
+  **WebSocket** (`ws://<host>:8083`) from browser code.
+- The embedded brokers have **no authentication**. Run them
+  on networks you trust (a LAN, a tailnet); do not
+  port-forward them to the internet.
+- Pick any unique client ID. There is no registry of users:
+  a "username" is just the last topic segment, chosen by the
+  user in the Relay Tool panels (default `steve`) and by you
+  in the `from` field of what you send.
+
+Which broker? Pages connect to localhostServer's broker (the
+snippet is stamped with its address). A program on another
+machine usually connects to the Remote Server's broker
+instead; the bridge carries `chat/+`, `scripts/+`,
+`assistant/#` and the RPC replies between the two brokers,
+so a message published to either one reaches the pages.
+Start localhostServer with `-remote-host` to turn the bridge
+on (see How to run).
+
+### Answering commands from pages
+
+Pages call JSON-RPC methods on a *target* (`localhost` or
+`remote`). To provide a target yourself:
+
+1. Subscribe to `shim/rpc/<target>/+`. The topic's last
+   segment is the caller's client ID.
+2. Parse the payload as a JSON-RPC request; dispatch on
+   `method`.
+3. Publish the response — same `id` — to
+   `shim/clients/<clientId>/rpc`.
+
+The two servers in this repo do exactly this (the `jsonrpc`
+package is the dispatcher; `mqttx` wires it to a broker), and
+their method set is the table under Protocol. A program in
+any language with an MQTT client can implement the same
+pattern.
+
+### Sending to a page
+
+Pages take no generic RPC calls; you reach them through
+three notification channels. All are fire-and-forget
+(QoS 0): if the user's function is not enabled and connected
+at that moment, the message is gone.
+
+**Chat.** Publish a `chat.message` notification to
+`chat/<username>` (payload under Protocol). Subscribe to
+`chat/<your-name>` to receive. The Chat function and the
+Remote Server (chat user `remote`) both work this way.
+
+**Deliver a script.** Publish a `script.deliver` notification
+to `scripts/<username>` (payload under Protocol). The script
+lands in the user's Inbox; nothing runs until the user
+reviews it and clicks Accept, which executes it on the page
+once.
+
+**Ask for a page snapshot.** Subscribe to
+`assistant/<username>/snapshot` *before* asking, then publish
+an `assistant.snapshot` notification to
+`assistant/<username>/request`:
+
+```json
+{"jsonrpc": "2.0", "method": "assistant.snapshot", "params": {"id": "req-1", "from": "operator"}}
+```
+
+If the user Accepts the request in the Inbox, the answer is
+a sequence of messages on the snapshot topic, all carrying
+your `id`: `begin` (page metadata), `dom` chunks
+(`seq`/`total`, in order), `console` (the console buffer),
+`end`. If the user denies it, the answer is a single
+`{"id": "req-1", "kind": "denied"}`. If the user has
+**Stream console** on in the Inbox, new console entries also
+arrive live, one per message, on
+`assistant/<username>/console`. The Remote Server's
+collector (`src/remoteserver/assistant.go`) is a working
+reference: it reassembles snapshots to a JSON file and
+appends streamed entries to a log.
+
+### Example
+
+A minimal operator program in Go, using the same MQTT
+client library as the bridge
+(`github.com/eclipse/paho.mqtt.golang`). It connects to a
+broker, subscribes for snapshot answers, then sends a chat
+message and a snapshot request:
+
+```go
+package main
+
+import (
+	"fmt"
+	"time"
+
+	paho "github.com/eclipse/paho.mqtt.golang"
+)
+
+func main() {
+	opts := paho.NewClientOptions().
+		AddBroker("tcp://127.0.0.1:1883").
+		SetClientID("operator-example")
+	client := paho.NewClient(opts)
+	if tok := client.Connect(); tok.Wait() && tok.Error() != nil {
+		panic(tok.Error())
+	}
+
+	// Subscribe before asking: QoS 0 messages are not stored.
+	client.Subscribe("assistant/steve/snapshot", 0,
+		func(_ paho.Client, msg paho.Message) {
+			fmt.Printf("snapshot: %s\n", msg.Payload())
+		})
+
+	pub := func(topic, payload string) {
+		tok := client.Publish(topic, 0, false, payload)
+		tok.Wait()
+	}
+	pub("chat/steve",
+		`{"jsonrpc":"2.0","method":"chat.message","params":{"from":"operator","text":"hello"}}`)
+	pub("assistant/steve/request",
+		`{"jsonrpc":"2.0","method":"assistant.snapshot","params":{"id":"req-1","from":"operator"}}`)
+
+	time.Sleep(10 * time.Second) // give the user time to Accept
+	client.Disconnect(250)
+}
+```
+
+The same program in another language is a translation
+exercise: connect, subscribe, publish the JSON above.
 
 ## Layout
 
@@ -395,11 +538,12 @@ src/            — the Go module
     server_test.go — broker/RPC/bridge/assets/GUI integration tests
   remoteserver/
     main.go       — the Remote Server: broker + RPC responder + chat user "remote" + operator console
+    assistant.go  — snapshot collector: reassembles snapshots to -assistant-file, streams console entries to -assistant-log
   client/
     snippet.js      — the loader snippet (source): MqttRpc + CommsShim loader
     snippet.min.js  — snippet compiled by Closure Compiler (committed; rebuilt by make)
     relay-tool.js   — the Relay Tool core (menu bar, function list, Settings view, loader)
-    functions/      — loadable function scripts, one per function (echo.js, chat.js, scripts.js)
+    functions/      — loadable function scripts, one per function (echo.js, chat.js, inbox.js)
     mqtt.min.js     — vendored MQTT.js browser build (fallback for the CDN copy)
     demo.html       — demo page: loads the snippet like a console paste
 build/          — build artifacts and executables (generated, gitignored)
