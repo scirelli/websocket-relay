@@ -274,34 +274,37 @@ Functions (served at `GET /functions/<id>.js`, cataloged in
   Chat with" row naming the two chat users, an IRC-style message
   log, and a message composer. The panel owns its own broker
   connection, independent of the shared one.
-- **Script Inbox** (`relay-scripts-panel`) — an email-style inbox
-  for delivered scripts. Scripts arrive as `script.deliver`
-  notifications on `scripts/<username>` (QoS 0: if the function
-  is not enabled and connected, a delivery is lost). The list on
-  the left shows each script's state — unread, read, run, denied
-  (crossed out); the detail on the right shows the name, sender,
-  description, and the full script, with **Accept** (execute the
-  script on the page, once) and **Deny** buttons. Nothing runs
-  without an explicit Accept.
-- **Assistant** (`relay-assistant-panel`) — a page-debugging
-  companion. While connected it hooks the page's console
+- **Inbox** (`relay-inbox-panel`) — one inbox for everything
+  that arrives for the user to review and allow or deny, on a
+  single broker connection. Two kinds of item share the list:
+  delivered scripts and **Read Page** requests. Scripts arrive
+  as `script.deliver` notifications on `scripts/<username>`;
+  the list shows each item's state (scripts: unread, read,
+  run, denied — crossed out; page requests: new, sent,
+  denied), and the detail pane shows a script's name, sender,
+  description, and full source, or what a page request will
+  send. **Accept** executes a script on the page (once) or
+  answers a page request; **Deny** refuses it. Both channels
+  are QoS 0: if the function is not enabled and connected, an
+  item is lost. The panel also hooks the page's console
   (`log`/`info`/`warn`/`error`, `window.onerror`, unhandled
   promise rejections) into a local buffer, deduplicated by
   fingerprint (level + text + source) with repeat counts, so a
-  broken page cannot flood it. Nothing leaves the page until a
-  snapshot is requested (`assistant.snapshot` on
-  `assistant/<username>/request`) **and the user approves the
-  request in the panel**: the panel then answers on
-  `assistant/<username>/snapshot` with the page URL and title,
-  screen/viewport metrics, the full DOM (chunked), and the
-  console buffer. A toggle streams new distinct entries live on
-  `assistant/<username>/console` instead. The Remote Server
+  broken page cannot flood it. Nothing leaves the page on its
+  own: a page snapshot is sent only when a request arrives
+  (`assistant.snapshot` on `assistant/<username>/request`)
+  **and the user Accepts it in the panel** — the panel then
+  answers on `assistant/<username>/snapshot` with the page URL
+  and title, screen/viewport metrics, the full DOM (chunked),
+  and the console buffer. A **Stream console** checkbox at the
+  top of the panel instead sends each new distinct entry live
+  on `assistant/<username>/console`. The Remote Server
   collects snapshots to a JSON file (`-assistant-file`) and
   streamed entries to a log (`-assistant-log`), so the operator
-  side can answer questions about the page. Denying a request
-  sends a one-line `denied` notice instead, so a refusal is not
-  mistaken for a lost message. The request channel takes
-  snapshot requests only — no eval.
+  side can answer questions about the page. Denying a page
+  request sends a one-line `denied` notice instead, so a
+  refusal is not mistaken for a lost message. The request
+  channel takes snapshot requests only — no eval.
 
 Adding a function = one script in `src/client/functions/` plus
 one entry in the server catalog — no snippet or core redeploy,
@@ -326,9 +329,9 @@ Topics:
 | `shim/clients/<clientId>/rpc` | server → client | JSON-RPC response |
 | `chat/<username>` | anyone → that user | `chat.message` notification |
 | `scripts/<username>` | anyone → that user | `script.deliver` notification |
-| `assistant/<username>/request` | operator → Assistant | `assistant.snapshot` notification |
-| `assistant/<username>/snapshot` | Assistant → operator | snapshot sequence: `begin` (metadata), `dom` chunks, `console`, `end` — or a `denied` notice |
-| `assistant/<username>/console` | Assistant → operator | one streamed console entry (JSON) |
+| `assistant/<username>/request` | operator → Inbox | `assistant.snapshot` notification |
+| `assistant/<username>/snapshot` | Inbox → operator | snapshot sequence: `begin` (metadata), `dom` chunks, `console`, `end` — or a `denied` notice |
+| `assistant/<username>/console` | Inbox → operator | one streamed console entry (JSON) |
 
 Request:
 ```json

@@ -208,19 +208,17 @@ func TestFunctionsListOverMQTT(t *testing.T) {
 	got := awaitMsg(t, msgs, `"id":3`)
 	assert.Contains(t, got, `"id":"echo"`)
 	assert.Contains(t, got, `"id":"chat"`)
-	assert.Contains(t, got, `"id":"scripts"`)
-	assert.Contains(t, got, `"id":"assistant"`)
+	assert.Contains(t, got, `"id":"inbox"`)
 	assert.Contains(t, got, `"script":"/functions/echo.js"`)
 	assert.Contains(t, got, `"script":"/functions/chat.js"`)
-	assert.Contains(t, got, `"script":"/functions/scripts.js"`)
-	assert.Contains(t, got, `"script":"/functions/assistant.js"`)
+	assert.Contains(t, got, `"script":"/functions/inbox.js"`)
 }
 
 func TestFunctionFilesServed(t *testing.T) {
 	srv := httptest.NewServer(buildMux())
 	t.Cleanup(srv.Close)
 
-	for _, id := range []string{"echo", "chat", "scripts", "assistant"} {
+	for _, id := range []string{"echo", "chat", "inbox"} {
 		resp, err := http.Get(srv.URL + "/functions/" + id + ".js")
 		require.NoError(t, err)
 		body, _ := io.ReadAll(resp.Body)
