@@ -16,7 +16,7 @@ import (
 // Bump it whenever client/relay-tool.js changes; the version is
 // sent in the X-Relay-Tool-Version header and shown in the tool's
 // header. Keep it in step with VERSION in client/relay-tool.js.
-const RelayToolVersion = "0.7.0"
+const RelayToolVersion = "0.7.1"
 
 // relayToolHandler serves the Relay Tool JavaScript.
 func relayToolHandler(w http.ResponseWriter, r *http.Request) {

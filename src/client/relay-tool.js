@@ -1,5 +1,5 @@
 /**
- * Comms Shim — Relay Tool v0.7.0 (core)
+ * Comms Shim — Relay Tool v0.7.1 (core)
  *
  * Served by localhostServer (GET /relay-tool.js) and loaded by the
  * client snippet. A floating tool window built from standard web
@@ -37,7 +37,7 @@
  * are CSS, not JS.
  */
 (() => {
-  const VERSION = '0.7.0';
+  const VERSION = '0.7.1';
 
   // This exact version already loaded? Then there is nothing to
   // do — the same code is already registered under the same tags.
@@ -47,8 +47,13 @@
   const tagSuffix = `-v${VERSION.replaceAll('.', '-')}`;
   const tag = (base) => base + tagSuffix;
 
+  // color-scheme is pinned to light in every component's :host
+  // rule: it is inherited into shadow trees, and without a pin
+  // the UA-styled parts (inputs, checkboxes, button text) follow
+  // the ambient scheme — on a dark-scheme browser they render
+  // dark-on-light and the ✕ buttons go white-on-white.
   const panelCSS = `
-    :host { display: block; height: 100%; }
+    :host { display: block; height: 100%; color-scheme: light; }
     .panel { height: 100%; box-sizing: border-box; padding: 0.6rem;
              animation: panel-in 160ms ease-out; }
     @keyframes panel-in {
@@ -231,7 +236,7 @@
     connectedCallback() {
       this.shadowRoot.innerHTML = `
         <style>
-          :host { display: block; height: 100%; }
+          :host { display: block; height: 100%; color-scheme: light; }
           nav { height: 100%; box-sizing: border-box; padding: 0.4rem;
                 background: var(--rt-list-bg, #f4f4f6);
                 border-right: 1px solid var(--rt-border, #ddd); }
@@ -313,7 +318,7 @@
           .settings-head h3 { flex: 1; margin: 0; font-size: 0.95rem; }
           .settings-head button { border: none; background: none;
                                   font: inherit; cursor: pointer;
-                                  padding: 0 0.3rem; }
+                                  color: inherit; padding: 0 0.3rem; }
           .settings-body { flex: 1; display: flex; min-height: 0; }
           .sections { width: 118px; flex: none; padding-right: 0.5rem;
                       border-right: 1px solid var(--rt-border, #ddd); }
@@ -439,7 +444,7 @@
         <style>
           :host { position: fixed; top: 16px; right: 16px; z-index: 2147483000;
                   font-family: system-ui, sans-serif; font-size: 14px;
-                  color: var(--rt-text, #222); }
+                  color: var(--rt-text, #222); color-scheme: light; }
           .window { width: 560px; height: 380px; min-width: 340px;
                     min-height: 220px; resize: both; overflow: hidden;
                     display: flex; flex-direction: column;
@@ -460,7 +465,8 @@
           header .version { color: var(--rt-muted, #777);
                             font-size: 0.8rem; }
           header button { border: none; background: none; font: inherit;
-                          cursor: pointer; padding: 0 0.3rem; }
+                          cursor: pointer; color: inherit;
+                          padding: 0 0.3rem; }
           .menubar { display: flex; padding: 0.15rem 0.4rem;
                      background: var(--rt-bg, #fff);
                      border-bottom: 1px solid var(--rt-border, #ddd); }
